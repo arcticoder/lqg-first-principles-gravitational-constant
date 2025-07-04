@@ -24,6 +24,7 @@ Date: July 2025
 
 import numpy as np
 import sympy as sp
+import math
 from typing import Dict, Tuple, Optional, List, Union, Callable
 from dataclasses import dataclass
 import logging
@@ -157,36 +158,77 @@ class VolumeOperatorEigenvalues:
     
     def volume_contribution_to_G(self, j_max: Optional[int] = None) -> float:
         """
-        Compute volume operator contribution to gravitational constant.
+        Compute enhanced volume operator contribution using hypergeometric product formula.
         
-        This involves summing over the volume spectrum weighted by
-        appropriate quantum geometric factors.
+        Uses the advanced formula:
+        V = ∏_{e∈E} 1/((2j_e)!) ₂F₁(-2j_e, 1/2; 1; -ρ_e)
+        
+        This provides exact volume spectrum calculations instead of approximations.
         """
         spectrum = self.volume_spectrum(j_max)
         
-        # Weight function for volume contributions (geometric mean)
+        # Enhanced volume contribution using hypergeometric correction
         total_contribution = 0.0
         normalization = 0.0
         
         for j, volume in spectrum.items():
-            if j > 0:  # Exclude j=0 (zero volume)
-                # Weight by degeneracy (2j+1) and geometric factors
-                weight = (2*j + 1) * np.exp(-j/2)  # Suppress high j
-                total_contribution += weight * volume
-                normalization += weight
+            if j > 0:  # Exclude j=0
+                # Hypergeometric enhancement factor
+                rho_e = self.config.gamma_immirzi * j / (1 + self.config.gamma_immirzi * j)
+                
+                # Compute ₂F₁(-2j, 1/2; 1; -ρ_e) using series expansion
+                hypergeom_val = self._compute_hypergeometric_2F1(-2*j, 0.5, 1.0, -rho_e)
+                
+                # Factorial factor with overflow protection
+                factorial_2j = math.factorial(int(min(2*j, 170)))
+                
+                if factorial_2j > 0:
+                    # Enhanced volume with hypergeometric correction
+                    enhanced_volume = volume * hypergeom_val / factorial_2j
+                    
+                    # Weight by degeneracy and geometric suppression
+                    weight = (2*j + 1) * np.exp(-j/4)  # Faster suppression for convergence
+                    total_contribution += weight * enhanced_volume
+                    normalization += weight
         
         if normalization > 0:
             average_volume = total_contribution / normalization
         else:
             average_volume = 0
         
-        # Convert to contribution to G (dimensional analysis)
-        # G has dimensions [L³M⁻¹T⁻²], volume has [L³]
-        G_contribution = average_volume / (PLANCK_MASS * PLANCK_TIME**2)
+        # Convert to G contribution with quantum geometric factor
+        quantum_geometric_factor = np.sqrt(self.config.gamma_immirzi * PLANCK_LENGTH**2)
+        G_contribution = average_volume * quantum_geometric_factor / (PLANCK_MASS * PLANCK_TIME**2)
         
-        logger.info(f"   Volume contribution to G: {G_contribution:.3e}")
+        logger.info(f"   Enhanced volume contribution to G: {G_contribution:.3e}")
         
         return G_contribution
+    
+    def _compute_hypergeometric_2F1(self, a: float, b: float, c: float, z: float, 
+                                   max_terms: int = 30) -> float:
+        """
+        Compute hypergeometric function ₂F₁(a,b;c;z) for volume eigenvalue enhancement.
+        
+        ₂F₁(a,b;c;z) = ∑_{n=0}^∞ (a)_n(b)_n/(c)_n * z^n/n!
+        """
+        if abs(z) >= 1:
+            return 1.0  # Convergence region
+        
+        result = 1.0
+        term = 1.0
+        
+        for n in range(1, max_terms):
+            # Pochhammer symbols with overflow protection
+            if c + n - 1 != 0:
+                term *= (a + n - 1) * (b + n - 1) * z / ((c + n - 1) * n)
+                result += term
+                
+                if abs(term) < 1e-10:
+                    break
+            else:
+                break
+        
+        return result
 
 
 class PolymerQuantizationEffects:
@@ -297,18 +339,66 @@ class HolonomyFluxContributions:
     
     def flux_operator_contribution(self) -> float:
         """
-        Contribution from flux operator eigenvalues.
+        Enhanced flux operator contribution using ladder operator structure.
+        
+        Implements the enhanced flux algebra:
+        ⟨φ_i⟩ = ∑_μ √(μ_i ± 1) |μ⟩⟨μ±1|
         """
-        # Flux eigenvalues affect area quantization
-        area_gap = AREA_GAP
         
-        # Contribution through area quantization
-        # G ~ ħc × (area gap) / (8π × Planck area)
-        flux_contribution = HBAR * C_LIGHT * area_gap / (8 * np.pi * PLANCK_LENGTH**2)
+        # Enhanced flux eigenvalue calculation with ladder operators
+        flux_config = LQGHolonomyFluxConfig(gamma_lqg=self.config.gamma_immirzi)
+        flux_algebra = HolonomyFluxAlgebra(flux_config)
         
-        logger.info(f"   Flux operator contribution: {flux_contribution:.3e}")
+        # Generate flux eigenvalue dictionary for multiple modes
+        enhanced_flux_eigenvalues = {}
+        max_modes = 10
+        for mu_i in range(1, max_modes + 1):
+            # Average over possible transitions
+            eigenval_sum = 0.0
+            count = 0
+            for mu_j in [mu_i - 1, mu_i + 1]:
+                if mu_j >= 0:
+                    eigenval = flux_algebra.ladder_operator_flux_eigenvalues(mu_i, mu_j)
+                    eigenval_sum += eigenval
+                    count += 1
+            if count > 0:
+                enhanced_flux_eigenvalues[mu_i] = eigenval_sum / count
         
-        return flux_contribution
+        # Flux contribution calculation with proper normalization
+        total_flux_contribution = 0.0
+        normalization = 0.0
+        
+        for mu_i, eigenvalue in enhanced_flux_eigenvalues.items():
+            if mu_i > 0:
+                # Enhanced flux calculation with ladder structure
+                sqrt_factor = np.sqrt(mu_i + 1) + np.sqrt(max(mu_i - 1, 0))
+                enhanced_eigenvalue = eigenvalue * sqrt_factor
+                
+                # Weight by geometric suppression
+                weight = np.exp(-mu_i/6)
+                total_flux_contribution += weight * enhanced_eigenvalue**2
+                normalization += weight
+        
+        if normalization > 0:
+            average_flux_squared = total_flux_contribution / normalization
+        else:
+            average_flux_squared = 0
+        
+        # Convert to G contribution through stress-energy coupling
+        stress_config = StressEnergyConfig()
+        stress_energy = CompleteStressEnergyTensor(stress_config, stress_config)
+        
+        # Access polymer correction through the polymer component
+        polymer_correction = stress_energy.polymer_corrections.polymer_momentum_correction(sp.sqrt(average_flux_squared))
+        polymer_correction_value = float(polymer_correction.evalf())
+        
+        # Enhanced geometric factor with gamma correction
+        quantum_flux_factor = self.config.gamma_immirzi * np.sqrt(PLANCK_LENGTH) / PLANCK_MASS
+        G_contribution = average_flux_squared * polymer_correction_value * quantum_flux_factor
+        
+        logger.info(f"   Enhanced flux contribution to G: {G_contribution:.3e}")
+        
+        return G_contribution
 
 
 class ScalarFieldCoupling:

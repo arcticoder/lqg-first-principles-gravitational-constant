@@ -20,8 +20,8 @@ def test_basic_calculation():
         volume_j_max=5,  # Smaller for faster computation
         include_polymer_corrections=True,
         include_volume_corrections=True,
-        include_holonomy_corrections=False,  # Disable to avoid issues
-        include_higher_order_terms=False,
+        include_holonomy_corrections=True,  # Enable holonomy corrections
+        include_higher_order_terms=True,   # Enable higher-order terms
         verbose_output=True
     )
     

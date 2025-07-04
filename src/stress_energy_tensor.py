@@ -175,22 +175,28 @@ class PolymerStressTensorCorrections:
     
     def polymer_momentum_correction(self, momentum: sp.Expr) -> sp.Expr:
         """
-        Apply polymer correction to momentum: sin(μπ)/μ
+        Apply corrected polymer modification: sinc(π μ) = sin(π μ)/(π μ).
+        
+        This is the CORRECTED form from polymer field algebra validation,
+        NOT the incorrect sin(μ)/μ.
         
         Args:
             momentum: Classical momentum
             
         Returns:
-            Polymer-corrected momentum
+            Polymer-corrected momentum with exact sinc(π μ)
         """
         mu = self.config.polymer_scale
         
+        # Corrected sinc function: sin(π μ p)/(π μ p)
+        pi_mu_p = sp.pi * mu * momentum
+        
         if self.config.holonomy_correction:
-            # Full trigonometric correction
-            return sp.sin(mu * momentum) / mu
+            # Full corrected trigonometric form: sinc(π μ p)
+            return momentum * sp.sin(pi_mu_p) / pi_mu_p
         else:
-            # Perturbative correction: 1 - μ²π²/6
-            return momentum * (1 - (mu * momentum)**2 / 6)
+            # Perturbative expansion: 1 - (π μ p)²/6 + ...
+            return momentum * (1 - pi_mu_p**2 / 6)
     
     def polymer_kinetic_energy(self) -> sp.Expr:
         """
