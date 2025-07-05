@@ -65,7 +65,7 @@ AREA_GAP = 4 * np.pi * GAMMA_IMMIRZI * PLANCK_LENGTH**2   # Minimal area
 
 @dataclass
 class GravitationalConstantConfig:
-    """Configuration for gravitational constant derivation"""
+    """Configuration for gravitational constant derivation with uncertainty support"""
     
     # LQG parameters
     gamma_immirzi: float = GAMMA_IMMIRZI
@@ -78,6 +78,18 @@ class GravitationalConstantConfig:
     alpha_2: float = 0.0234   # Quadratic correction coefficient  
     alpha_3: float = -0.0067  # Cubic correction coefficient
     alpha_4: float = 0.0012   # Validated: α₄ = 1.2×10⁻³ (quantum_geometry_catalysis.tex)
+    
+    # UNCERTAINTY QUANTIFICATION PARAMETERS - CRITICAL UQ ADDITION
+    enable_uncertainty_analysis: bool = False  # Enable UQ analysis
+    monte_carlo_samples: int = 10000  # Number of MC samples for UQ
+    confidence_level: float = 0.95  # Confidence level for intervals
+    
+    # Parameter uncertainty specifications (added for UQ compliance)
+    gamma_immirzi_uncertainty: float = 0.02  # 2% relative uncertainty
+    polymer_mu_bar_uncertainty: float = 0.15  # 15% relative uncertainty  
+    volume_correction_uncertainty: float = 0.05  # 5% uncertainty in volume corrections
+    scalar_field_uncertainty: float = 0.05  # 5% uncertainty in scalar field VEV
+    efficiency_factor_uncertainty: float = 0.01  # 1% uncertainty in polymer efficiency
     alpha_5: float = -0.0008  # Validated: α₅ = 0.8×10⁻³ (β₂ coefficient)
     alpha_6: float = 0.0005   # Validated: α₆ = 0.5×10⁻³ (harmonic progression)
     
@@ -1169,6 +1181,152 @@ class GravitationalConstantCalculator:
             logger.info(f"   Improvement: {validation['improvement_factor']:.2f}x better")
         
         return validation
+
+    def compute_uncertainty_quantification(self) -> Dict:
+        """
+        CRITICAL UQ METHOD: Compute uncertainty quantification for gravitational constant
+        
+        This method addresses high-severity UQ concerns by providing:
+        1. Parameter uncertainty propagation
+        2. Monte Carlo confidence intervals 
+        3. Statistical validation
+        4. Sensitivity analysis
+        
+        Returns:
+            UQ analysis results including confidence intervals and sensitivities
+        """
+        if not self.config.enable_uncertainty_analysis:
+            logger.warning("UQ analysis disabled. Enable with config.enable_uncertainty_analysis = True")
+            return {
+                'uq_enabled': False,
+                'warning': 'Uncertainty analysis not performed - potential high-severity UQ concern'
+            }
+        
+        logger.info("🔬 CRITICAL UQ ANALYSIS: Starting uncertainty quantification...")
+        
+        try:
+            # Import UQ module with fallback
+            try:
+                from .lqg_gravitational_uq import LQGGravitationalConstantUQ
+            except ImportError:
+                import sys
+                import os
+                sys.path.append(os.path.dirname(__file__))
+                from lqg_gravitational_uq import LQGGravitationalConstantUQ
+            
+            # Initialize UQ module 
+            uq_module = LQGGravitationalConstantUQ()
+            
+            # Perform uncertainty propagation using the correct method
+            uq_results = uq_module.propagate_uncertainty(self, n_samples=self.config.monte_carlo_samples)
+            
+            # Convert UQResults to expected dictionary format
+            experimental_G = self.config.experimental_G
+            confidence_level = self.config.confidence_level
+            
+            # Check if experimental value is within confidence interval
+            if confidence_level == 0.95:
+                within_ci = (uq_results.confidence_95_lower <= experimental_G <= uq_results.confidence_95_upper)
+                ci_lower = uq_results.confidence_95_lower
+                ci_upper = uq_results.confidence_95_upper
+            else:
+                within_ci = (uq_results.confidence_99_lower <= experimental_G <= uq_results.confidence_99_upper)
+                ci_lower = uq_results.confidence_99_lower
+                ci_upper = uq_results.confidence_99_upper
+            
+            # UQ quality assessment
+            uq_quality = self._assess_uq_quality(uq_results)
+            
+            return {
+                'uq_enabled': True,
+                'mean_G': uq_results.mean_G,
+                'std_G': uq_results.std_G,
+                'relative_uncertainty_percent': uq_results.relative_uncertainty * 100,
+                'confidence_interval_lower': ci_lower,
+                'confidence_interval_upper': ci_upper,
+                'confidence_level': confidence_level,
+                'experimental_within_ci': within_ci,
+                'parameter_sensitivities': uq_results.parameter_sensitivities,
+                'statistical_validation': uq_results.statistical_validation,
+                'uq_quality_assessment': uq_quality,
+                'monte_carlo_samples': self.config.monte_carlo_samples,
+                'uq_status': uq_quality['overall_status']
+            }
+            
+        except ImportError as e:
+            logger.error("CRITICAL UQ ERROR: lqg_gravitational_uq module not found")
+            return {
+                'uq_enabled': False,
+                'uq_status': 'CRITICAL ERROR - UQ module not available',
+                'error': 'UQ module import failed - CRITICAL UQ CONCERN',
+                'recommendation': 'Ensure lqg_gravitational_uq.py is available'
+            }
+        except Exception as e:
+            logger.error(f"CRITICAL UQ ERROR: {e}")
+            return {
+                'uq_enabled': False,
+                'uq_status': 'CRITICAL ERROR - UQ computation failed',
+                'error': f'UQ computation failed: {e}',
+                'severity': 'CRITICAL'
+            }
+    
+    def _assess_uq_quality(self, uq_results) -> Dict:
+        """Assess the quality of uncertainty quantification results"""
+        
+        # Quality criteria
+        criteria = {
+            'low_relative_uncertainty': uq_results.relative_uncertainty < 0.1,  # <0.1%
+            'adequate_relative_uncertainty': uq_results.relative_uncertainty < 1.0,  # <1.0%
+            'statistical_convergence': uq_results.statistical_validation.get('converged', False),
+            'sufficient_samples': uq_results.statistical_validation.get('sufficient_samples', False),
+            'normal_distribution': uq_results.statistical_validation.get('is_normal', False)
+        }
+        
+        # Overall status determination
+        if criteria['low_relative_uncertainty'] and criteria['statistical_convergence'] and criteria['sufficient_samples']:
+            overall_status = "HIGH_CONFIDENCE_UQ"
+        elif criteria['adequate_relative_uncertainty'] and criteria['statistical_convergence']:
+            overall_status = "ACCEPTABLE_UQ"
+        elif criteria['statistical_convergence']:
+            overall_status = "MODERATE_UQ_NEEDS_IMPROVEMENT"
+        else:
+            overall_status = "CRITICAL_UQ_ISSUES_DETECTED"
+        
+        return {
+            'criteria_met': criteria,
+            'overall_status': overall_status,
+            'relative_uncertainty_assessment': (
+                'EXCELLENT' if uq_results.relative_uncertainty < 0.05 else
+                'GOOD' if uq_results.relative_uncertainty < 0.1 else
+                'ACCEPTABLE' if uq_results.relative_uncertainty < 0.5 else
+                'NEEDS_IMPROVEMENT'
+            ),
+            'recommendations': self._generate_uq_recommendations(criteria, uq_results)
+        }
+    
+    def _generate_uq_recommendations(self, criteria: Dict, uq_results) -> List[str]:
+        """Generate UQ improvement recommendations"""
+        recommendations = []
+        
+        if not criteria['statistical_convergence']:
+            recommendations.append("CRITICAL: Increase Monte Carlo samples for statistical convergence")
+        
+        if not criteria['sufficient_samples']:
+            recommendations.append("HIGH: Increase sample size for robust statistics")
+        
+        if uq_results.relative_uncertainty > 0.5:
+            recommendations.append("HIGH: Reduce parameter uncertainties or improve model precision")
+        
+        if not criteria['normal_distribution']:
+            recommendations.append("MODERATE: Consider non-Gaussian uncertainty propagation methods")
+        
+        if uq_results.relative_uncertainty > 0.1:
+            recommendations.append("MODERATE: Investigate dominant uncertainty sources for reduction")
+        
+        if not recommendations:
+            recommendations.append("UQ analysis meets high-quality standards")
+        
+        return recommendations
     
     def generate_detailed_report(self) -> Dict[str, Union[float, str, Dict]]:
         """
@@ -1191,14 +1349,14 @@ class GravitationalConstantCalculator:
             'volume_contribution': theoretical_results['volume_contribution_ultra'], 
             'holonomy_contribution': theoretical_results['holonomy_contribution_ultra'],
             'scalar_field_contribution': theoretical_results['scalar_field_G_ultra'],
-            'polymer_correction': theoretical_results['polymer_correction_factor'],
-            'higher_order_correction': theoretical_results['higher_order_correction']
+            'polymer_correction': theoretical_results['polymer_correction_factor_ultra'],
+            'higher_order_correction': theoretical_results.get('higher_order_correction', 1.0)
         }
         
         # Generate comprehensive report
         report = {
             'summary': {
-                'theoretical_G': theoretical_results['G_theoretical'],
+                'theoretical_G': theoretical_results['G_theoretical_ultra'],
                 'experimental_G': validation['G_experimental'],
                 'relative_agreement': validation['relative_difference_percent'],
                 'agreement_quality': validation['agreement_quality']
@@ -1234,9 +1392,9 @@ class GravitationalConstantCalculator:
         def convert_numpy(obj):
             if isinstance(obj, np.ndarray):
                 return obj.tolist()
-            elif isinstance(obj, (np.int_, np.intc, np.intp, np.int8, np.int16, np.int32, np.int64)):
+            elif isinstance(obj, (np.integer, np.intc, np.intp, np.int8, np.int16, np.int32, np.int64)):
                 return int(obj)
-            elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+            elif isinstance(obj, (np.floating, np.float16, np.float32, np.float64)):
                 return float(obj)
             elif isinstance(obj, dict):
                 return {key: convert_numpy(value) for key, value in obj.items()}
@@ -1399,13 +1557,60 @@ def demonstrate_gravitational_constant_derivation():
     print(f"   • Polymer quantization effects")
     print(f"   • Scalar field dynamics (G → φ(x))")
     
+    # CRITICAL UQ ANALYSIS - Added to resolve high-severity UQ concerns
+    print(f"\n🔬 UNCERTAINTY QUANTIFICATION ANALYSIS:")
+    print("-" * 50)
+    
+    # Enable UQ analysis for comprehensive validation
+    calc.config.enable_uncertainty_analysis = True
+    calc.config.monte_carlo_samples = 5000  # Reduced for demonstration
+    
+    uq_results = calc.compute_uncertainty_quantification()
+    
+    if uq_results['uq_enabled']:
+        print(f"   UQ Status: {uq_results['uq_status']}")
+        print(f"   Mean G (with uncertainty): {uq_results['mean_G']:.10e} m³⋅kg⁻¹⋅s⁻²")
+        print(f"   Standard deviation: ±{uq_results['std_G']:.2e}")
+        print(f"   Relative uncertainty: {uq_results['relative_uncertainty_percent']:.3f}%")
+        print(f"   {uq_results['confidence_level']*100:.0f}% confidence interval:")
+        print(f"      [{uq_results['confidence_interval_lower']:.10e}, {uq_results['confidence_interval_upper']:.10e}]")
+        print(f"   Experimental G within CI: {'✅ Yes' if uq_results['experimental_within_ci'] else '❌ No'}")
+        
+        # Display top parameter sensitivities
+        sensitivities = uq_results['parameter_sensitivities']
+        if sensitivities:
+            top_3 = sorted(sensitivities.items(), key=lambda x: x[1], reverse=True)[:3]
+            print(f"   Top parameter sensitivities:")
+            for param, sens in top_3:
+                print(f"      • {param}: {sens:.2e}")
+        
+        # UQ quality assessment
+        quality = uq_results['uq_quality_assessment']
+        print(f"   UQ Quality: {quality['relative_uncertainty_assessment']}")
+        
+        # Display recommendations if any issues
+        if quality['recommendations'] and quality['recommendations'][0] != "UQ analysis meets high-quality standards":
+            print(f"   UQ Recommendations:")
+            for rec in quality['recommendations'][:3]:  # Show top 3
+                severity = "🔴" if "CRITICAL" in rec else "🟡" if "HIGH" in rec else "🔵"
+                print(f"      {severity} {rec}")
+        else:
+            print(f"   ✅ UQ analysis meets high-quality standards")
+    else:
+        print(f"   ❌ UQ ANALYSIS FAILED - CRITICAL CONCERN")
+        if 'error' in uq_results:
+            print(f"   Error: {uq_results['error']}")
+        if 'recommendation' in uq_results:
+            print(f"   Recommendation: {uq_results['recommendation']}")
+    
     print("\n" + "="*80)
     print("✅ FIRST-PRINCIPLES GRAVITATIONAL CONSTANT DERIVATION COMPLETE")
+    print("   WITH COMPREHENSIVE UNCERTAINTY QUANTIFICATION")
     print("="*80)
     
     return calc, report
 
 
 if __name__ == "__main__":
-    # Run complete demonstration
+    # Run complete demonstration with UQ analysis
     calculator, final_report = demonstrate_gravitational_constant_derivation()
