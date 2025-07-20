@@ -124,3 +124,5 @@ dmypy.json
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+.github/instructions/copilot-instructions.md
