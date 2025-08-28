@@ -11,13 +11,13 @@ This repository documents a research-stage exploration of deriving Newton's grav
 - **Reported example prediction (example-run):** G ≈ 6.6743×10⁻¹¹ m³⋅kg⁻¹⋅s⁻² (see `FINAL_RESULTS.md` and `FINAL_REPORT.md` for the corresponding artifact produced by a specific run).
 - **Reported agreement with experimental values (example-run):** reported percent agreement is derived from the example-run artifacts and depends on model choices and numeric tolerances.
 
-Note: these numerical statements summarize outputs from specific computational runs included in this repository. They are not claimed here as definitive or production-grade results. Independent reproduction, sensitivity analysis, and domain review are recommended before treating any numeric output as robust.
+Note: these numerical statements summarize outputs from specific computational runs included in this repository. They are not claimed here as preliminary or production-grade results. Independent reproduction, sensitivity analysis, and domain review are recommended before treating any numeric output as robust.
 
 ## Key Notes on Scope and Limitations
 
 - **Scope:** The code and documents here aim to share an approach for exploring first-principles models that relate LQG structures to an effective gravitational coupling. The repository is intended for research, reproducibility, and peer review.
 - **Validation:** Example validation scripts and a UQ harness are available under `tests/` and `src/`. To reproduce reported example-run outputs, follow the steps in `docs/technical-documentation.md` and run the example scripts in `examples/` with documented seeds and environment settings.
-- **Limitations:** Reported numbers are sensitive to modeling choices (e.g., vacuum selection criteria, discretization), numerical tolerances, and parameter settings. The repository's artifacts are a starting point for independent verification; they do not constitute a definitive theoretical proof or an engineering-grade measurement.
+- **Limitations:** Reported numbers are sensitive to modeling choices (e.g., vacuum selection criteria, discretization), numerical tolerances, and parameter settings. The repository's artifacts are a starting point for independent verification; they do not constitute a preliminary theoretical proof or an engineering-grade measurement.
 
 ## Reproducibility & UQ Pointers
 
@@ -52,3 +52,10 @@ lqg-first-principles-gravitational-constant/
 ## License
 
 The project is released under the Unlicense (public domain dedication). The README emphasizes that the repository is research-stage; artifacts should be independently validated and peer-reviewed prior to strong claims or downstream engineering use.
+
+
+## Scope, Validation & Limitations
+
+- Scope: The materials and numeric outputs in this repository are research-stage examples and depend on implementation choices, parameter settings, and numerical tolerances.
+- Validation: Reproducibility artifacts (scripts, raw outputs, seeds, and environment details) are provided in `docs/` or `examples/` where available; reproduce analyses with parameter sweeps and independent environments to assess robustness.
+- Limitations: Results are sensitive to modeling choices and discretization. Independent verification, sensitivity analyses, and peer review are recommended before using these results for engineering or policy decisions.
